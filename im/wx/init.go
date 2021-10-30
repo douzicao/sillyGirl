@@ -140,7 +140,7 @@ func init() {
 		if jms.Event != "EventFriendMsg" && jms.Event != "EventGroupMsg" {
 			return
 		}
-		if jms.Type != 1 && jms.Type != 3 {
+		if jms.Type != 1 && jms.Type != 3 && jms.Type != 49 {
 			return
 		}
 		if jms.FinalFromWxid == jms.RobotWxid {
