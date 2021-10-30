@@ -1,4 +1,4 @@
-module github.com/cdle/sillyGirl
+module github.com/douzicao/sillyGirl
 
 go 1.16
 

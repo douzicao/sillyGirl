@@ -22,7 +22,7 @@ set sillyGirl auto_update true
 
 ##### 傻妞内置赞赏码
 
-set sillyGirl appreciate https://gitee.com/aiancandle/sillyGirl/raw/main/appreciate.jpg
+set sillyGirl appreciate 
 
 #### 是否启动http服务
 
@@ -140,4 +140,4 @@ set wxmp masters w1&w2&w3...
 
 set wx dynamic_ip true
 
-![Image text](https://raw.githubusercontent.com/cdle/sillyGirl/main/appreciate.jpg)
+

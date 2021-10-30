@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/cdle/sillyGirl/core"
+	"github.com/douzicao/sillyGirl/core"
 )
 
 func init() {

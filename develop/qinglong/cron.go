@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cdle/sillyGirl/core"
+	"github.com/douzicao/sillyGirl/core"
 )
 
 type CronResponse struct {
@@ -197,7 +197,7 @@ func init() {
 				}
 
 				w := func(s string) int {
-					if strings.Contains(s, "cdle") {
+					if strings.Contains(s, "douzicao") {
 						return 20
 					}
 					if strings.Contains(s, "shufflewzc") {
@@ -228,7 +228,7 @@ func init() {
 						Config.Req(CRONS, PUT, "/disable", []byte(fmt.Sprintf(`["%s"]`, crons[i].ID)))
 						continue
 					}
-					if (strings.Contains(crons[i].Command, "1111") || strings.Contains(strings.ToLower(crons[i].Command), "jd_red.js") || strings.Contains(strings.ToLower(crons[i].Command), "jd_hongbao.js")) && !strings.Contains(crons[i].Command, "cdle") {
+					if (strings.Contains(crons[i].Command, "1111") || strings.Contains(strings.ToLower(crons[i].Command), "jd_red.js") || strings.Contains(strings.ToLower(crons[i].Command), "jd_hongbao.js")) && !strings.Contains(crons[i].Command, "douzicao") {
 						Config.Req(CRONS, PUT, "/disable", []byte(fmt.Sprintf(`["%s"]`, crons[i].ID)))
 						continue
 					}

@@ -13,7 +13,7 @@ import (
 
 	"github.com/astaxie/beego/httplib"
 	"github.com/beego/beego/v2/core/logs"
-	"github.com/cdle/sillyGirl/core"
+	"github.com/douzicao/sillyGirl/core"
 	tb "gopkg.in/tucnak/telebot.v2"
 )
 

@@ -14,7 +14,7 @@ import (
 	"github.com/Mrs4s/go-cqhttp/global"
 	"github.com/Mrs4s/go-cqhttp/global/config"
 	"github.com/beego/beego/v2/core/logs"
-	"github.com/cdle/sillyGirl/core"
+	"github.com/douzicao/sillyGirl/core"
 	"gopkg.in/yaml.v3"
 
 	"github.com/Mrs4s/MiraiGo/binary"

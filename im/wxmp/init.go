@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/beego/beego/v2/adapter/httplib"
-	"github.com/cdle/sillyGirl/core"
+	"github.com/douzicao/sillyGirl/core"
 	"github.com/gin-gonic/gin"
 	wechat "github.com/silenceper/wechat/v2"
 	"github.com/silenceper/wechat/v2/cache"
