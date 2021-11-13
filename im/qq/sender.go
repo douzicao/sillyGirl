@@ -3,6 +3,7 @@ package qq
 import (
 	"bytes"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -42,7 +43,7 @@ func (sender *Sender) GetContent() string {
 	return strings.Trim(text, " ")
 }
 
-func (sender *Sender) GetUserID() interface{} {
+func (sender *Sender) GetUserID() string {
 	id := 0
 	switch sender.Message.(type) {
 	case *message.PrivateMessage:
@@ -52,10 +53,13 @@ func (sender *Sender) GetUserID() interface{} {
 	case *message.GroupMessage:
 		id = int(sender.Message.(*message.GroupMessage).Sender.Uin)
 	}
-	return id
+	if id != 0 {
+		return fmt.Sprint(id)
+	}
+	return ""
 }
 
-func (sender *Sender) GetChatID() interface{} {
+func (sender *Sender) GetChatID() int {
 	id := 0
 	switch sender.Message.(type) {
 	case *message.GroupMessage:
@@ -110,7 +114,13 @@ func (sender *Sender) IsAdmin() bool {
 		m := sender.Message.(*message.GroupMessage)
 		sid = m.Sender.Uin
 	}
-	return strings.Contains(qq.Get("masters"), fmt.Sprint(sid))
+	id := fmt.Sprint(sid)
+	for _, v := range strings.Split(qq.Get("masters"), "&") {
+		if id == v {
+			return true
+		}
+	}
+	return false
 }
 
 func (sender *Sender) IsMedia() bool {
@@ -191,12 +201,12 @@ func (sender *Sender) Reply(msgs ...interface{}) (int, error) {
 				sender.Reply(err)
 				return 0, nil
 			} else {
-				id = bot.SendGroupMessage(m.GroupCode, &message.SendingMessage{Elements: []message.IMessageElement{&message.AtElement{Target: m.Sender.Uin}, &message.TextElement{Content: "\n"}, &coolq.LocalImageElement{Stream: bytes.NewReader(data)}}})
+				id = bot.SendGroupMessage(m.GroupCode, &message.SendingMessage{Elements: []message.IMessageElement{&message.AtElement{Target: m.Sender.Uin}, &message.TextElement{Content: " \n"}, &coolq.LocalImageElement{Stream: bytes.NewReader(data)}}})
 			}
 		}
 		if content != "" {
 			if strings.Contains(content, "\n") {
-				content = "\n" + content
+				content = " \n" + content
 			}
 			id = bot.SendGroupMessage(m.GroupCode, &message.SendingMessage{Elements: append([]message.IMessageElement{
 				&message.AtElement{Target: m.Sender.Uin}}, bot.ConvertStringMessage(content, true)...)}) //
@@ -245,6 +255,11 @@ func (sender *Sender) Disappear(lifetime ...time.Duration) {
 
 func (sender *Sender) Finish() {
 
+}
+
+func (sender *Sender) Copy() core.Sender {
+	new := reflect.Indirect(reflect.ValueOf(interface{}(sender))).Interface().(Sender)
+	return &new
 }
 
 func (sender *Sender) GetUsername() string {

@@ -203,7 +203,7 @@ func init() {
 					if strings.Contains(s, "shufflewzc") {
 						return 1
 					}
-					if strings.Contains(s, "smiek2221") {
+					if strings.Contains(s, "smiek2121") {
 						return 9
 					}
 					if strings.Contains(s, "Aaron-lv") {
@@ -228,8 +228,12 @@ func init() {
 						Config.Req(CRONS, PUT, "/disable", []byte(fmt.Sprintf(`["%s"]`, crons[i].ID)))
 						continue
 					}
-					if (strings.Contains(crons[i].Command, "1111") || strings.Contains(strings.ToLower(crons[i].Command), "jd_red.js") || strings.Contains(strings.ToLower(crons[i].Command), "jd_hongbao.js")) && !strings.Contains(crons[i].Command, "douzicao") {
-						Config.Req(CRONS, PUT, "/disable", []byte(fmt.Sprintf(`["%s"]`, crons[i].ID)))
+					if strings.Contains(crons[i].Command, "jd_redEnvelope.js") || strings.Contains(strings.ToLower(crons[i].Command), "jd_red.js") || strings.Contains(strings.ToLower(crons[i].Command), "jd_hongbao.js") || strings.Contains(crons[i].Command, "1111") {
+						if !strings.Contains(crons[i].Command, "douzicao") {
+							Config.Req(CRONS, PUT, "/disable", []byte(fmt.Sprintf(`["%s"]`, crons[i].ID)))
+						} else {
+							Config.Req(CRONS, PUT, "/enable", []byte(fmt.Sprintf(`["%s"]`, crons[i].ID)))
+						}
 						continue
 					}
 					if s.GetImType() == "fake" && qinglong.GetBool("autoCronHideDuplicate", true) == false {
