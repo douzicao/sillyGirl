@@ -2,6 +2,7 @@ package core
 
 import (
 	"crypto/md5"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
