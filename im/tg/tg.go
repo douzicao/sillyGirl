@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/astaxie/beego/httplib"
 	"github.com/beego/beego/v2/core/logs"
 	"github.com/douzicao/sillyGirl/core"
 	"golang.org/x/net/proxy"
@@ -30,6 +29,7 @@ type Sender struct {
 
 var tg = core.NewBucket("tg")
 var b *tb.Bot
+var Transport *http.Transport
 var Handler = func(message *tb.Message) {
 	if message.FromGroup() {
 		if groupCode := tg.GetInt("groupCode"); groupCode != 0 && groupCode != int(message.Chat.ID) {
@@ -41,93 +41,83 @@ var Handler = func(message *tb.Message) {
 	}
 }
 
-func buildClientWithProxy(addr string) (*http.Client, error) {
-	if addr != "" {
-		u, err := url.Parse(addr)
+func buildHttpTransportWithProxy() {
+	addr := tg.Get("http_proxy")
+	if strings.Contains(addr, "http://") {
+		if addr != "" {
+			u, err := url.Parse(addr)
+			if err != nil {
+				logs.Warn("can't connect to the http proxy:", err)
+				return
+			}
+			Transport = &http.Transport{Proxy: http.ProxyURL(u)}
+		}
+	}
+	if strings.Contains(addr, "sock5://") || strings.Contains(addr, "socks5://") {
+		addr = strings.Replace(addr, "sock5://", "", -1)
+		addr = strings.Replace(addr, "socks5://", "", -1)
+		var auth *proxy.Auth
+		v := strings.Split(addr, "@")
+		if len(v) == 3 {
+			auth = &proxy.Auth{
+				User:     v[1],
+				Password: v[2],
+			}
+			addr = v[0]
+		}
+		dialer, err := proxy.SOCKS5("tcp", addr, auth, proxy.Direct)
 		if err != nil {
-			logs.Warn("can't connect to the http proxy:", err)
-			return nil, nil
+			logs.Warn("can't connect to the sock5 proxy:", err)
+			return
 		}
-		// Patch client transport
-		httpTransport := &http.Transport{Proxy: http.ProxyURL(u)}
-		hc := &http.Client{Transport: httpTransport}
-
-		return hc, nil
-	}
-
-	return nil, nil // use default
-}
-
-func buildClientWithSock5Proxy(addr string) (*http.Client, error) {
-	var auth *proxy.Auth
-	v := strings.Split(addr, "@")
-	if len(v) == 3 {
-		auth = &proxy.Auth{
-			User:     v[1],
-			Password: v[2],
+		Transport = &http.Transport{
+			Dial: dialer.Dial,
 		}
-		addr = v[0]
 	}
-	dialer, err := proxy.SOCKS5("tcp", addr, auth, proxy.Direct)
-	if err != nil {
-		logs.Warn("can't connect to the sock5 proxy:", err)
-		return nil, nil
-	}
-	httpTransport := &http.Transport{
-		Dial: dialer.Dial,
-	}
-	httpClient := &http.Client{Transport: httpTransport}
-	return httpClient, nil
 }
 
 func init() {
 	go func() {
+		if tg.Get("sock5") != "" {
+			tg.Set("http_proxy", "sock5://"+tg.Get("sock5"))
+			tg.Set("sock5", "")
+		}
+		buildHttpTransportWithProxy()
+		core.Transport = Transport
 		token := tg.Get("token")
 		if runtime.GOOS == "darwin" {
-			token = "1972873850:AAFRySWmNYOpbidGTKxRv6oxDs3xXnsfn1U"
+			tg.Set("http_proxy", "http://127.0.0.1:7890")
+			token = "2134744649:AAED_uyILY7L8Rb_b4Bfn8h23-HRHHsoVwk"
 		}
 		if token == "" {
 			logs.Warn("未提供telegram机器人token")
 			return
 		}
-
 		settings := tb.Settings{
 			Token:  token,
 			Poller: &tb.LongPoller{Timeout: 10 * time.Second},
 			// ParseMode: tb.ModeMarkdownV2,
 			URL: tg.Get("url"),
 		}
-		if url := tg.Get("http_proxy"); url != "" {
-			client, clientErr := buildClientWithProxy(url)
-			if clientErr != nil {
-
-				return
-			}
-			settings.Client = client
-		}
-		if url := tg.Get("sock5"); url != "" {
-			client, clientErr := buildClientWithSock5Proxy(url)
-			if clientErr != nil {
-
-				return
-			}
-			settings.Client = client
+		if Transport != nil {
+			settings.Client = &http.Client{Transport: Transport}
 		}
 		var err error
 		b, err = tb.NewBot(settings)
 
 		if err != nil {
-			logs.Warn("监听telegram机器人失败：%v", err)
+			logs.Warn("Telegram机器人运行失败：%v", err)
 			return
 		}
-		core.Pushs["tg"] = func(i interface{}, s string) {
+		core.Pushs["tg"] = func(i interface{}, s string, _ interface{}, _ string) {
 			b.Send(&tb.User{ID: core.Int(i)}, s)
 		}
-		core.GroupPushs["tg"] = func(i, _ interface{}, s string) {
+		core.GroupPushs["tg"] = func(i, _ interface{}, s string, _ string) {
 			paths := []string{}
 			ct := &tb.Chat{ID: core.Int64(i)}
+			s = regexp.MustCompile(`file=[^\[\]]*,url`).ReplaceAllString(s, "file")
 			for _, v := range regexp.MustCompile(`\[CQ:image,file=([^\[\]]+)\]`).FindAllStringSubmatch(s, -1) {
-				paths = append(paths, "data/images/"+v[1])
+				paths = append(paths, v[1])
 				s = strings.Replace(s, fmt.Sprintf(`[CQ:image,file=%s]`, v[1]), "", -1)
 			}
 			s = regexp.MustCompile(`\[CQ:([^\[\]]+)\]`).ReplaceAllString(s, "")
@@ -143,37 +133,52 @@ func init() {
 			if len(paths) > 0 {
 				is := []tb.InputMedia{}
 				for index, path := range paths {
-					data, err := os.ReadFile(path)
-					if err == nil {
-						url := regexp.MustCompile("(https.*)").FindString(string(data))
-						if url != "" {
-							// rsp, err := httplib.Get(url).Response()
-							// if err == nil {
-							// 	i := &tb.Photo{File: tb.FromReader(rsp.Body)}
-							// 	if index == 0 {
-							// 		i.Caption = s
-							// 	}
-							// 	is = append(is, i)
-							// }
-							i := &tb.Photo{File: tb.FromURL(url)}
-
-							if index == 0 {
+					// fmt.Println(path, s)
+					if strings.HasPrefix(path, "http") {
+						i := &tb.Photo{File: tb.FromURL(path)}
+						if index == 0 {
+							if s != "" {
 								i.Caption = s
 							}
-							is = append(is, i)
+						}
+						is = append(is, i)
+					} else {
+						data, err := os.ReadFile("data/images/" + path)
+						if err == nil {
+							url := regexp.MustCompile("(https.*)").FindString(string(data))
+							if url != "" {
+								// rsp, err := httplib.Get(url).Response()
+								// if err == nil {
+								// 	i := &tb.Photo{File: tb.FromReader(rsp.Body)}
+								// 	if index == 0 {
+								// 		i.Caption = s
+								// 	}
+								// 	is = append(is, i)
+								// }
+								i := &tb.Photo{File: tb.FromURL(url)}
+
+								if index == 0 {
+									i.Caption = s
+								}
+								is = append(is, i)
+							}
 						}
 					}
 				}
 				b.SendAlbum(ct, is)
 				return
 			}
+			s = strings.Trim(s, "\n")
 			b.Send(ct, s)
 		}
 		b.Handle(tb.OnPhoto, func(m *tb.Message) {
 			filename := fmt.Sprint(time.Now().UnixNano()) + ".image"
 			filepath := "data/images/" + filename
+
+			// fmt.Println(m.Photo.FileLocal, "++++++++++++")
 			if b.Download(&m.Photo.File, filepath) == nil {
-				m.Text = fmt.Sprintf(`[TG:image,file=%s]`, filename) + m.Caption
+				// fmt.Sprintf(`[TG:image,file=%s]`, filename)
+				m.Text = m.Caption
 				Handler(m)
 			}
 		})
@@ -203,7 +208,7 @@ func init() {
 		// 	Handler(m)
 		// })
 		b.Handle(tb.OnText, Handler)
-		logs.Info("监听telegram机器人")
+		logs.Info("Telegram机器人已运行。")
 		b.Start()
 	}()
 }
@@ -231,8 +236,8 @@ func (sender *Sender) GetImType() string {
 	return "tg"
 }
 
-func (sender *Sender) GetMessageID() int {
-	return sender.Message.ID
+func (sender *Sender) GetMessageID() string {
+	return fmt.Sprint(sender.Message.ID)
 }
 
 func (sender *Sender) GetUsername() string {
@@ -241,6 +246,10 @@ func (sender *Sender) GetUsername() string {
 		name = fmt.Sprint(sender.Message.Sender.ID)
 	}
 	return name
+}
+
+func (sender *Sender) GetChatname() string {
+	return sender.Message.Chat.Title
 }
 
 func (sender *Sender) IsReply() bool {
@@ -270,7 +279,7 @@ func (sender *Sender) IsMedia() bool {
 	return false
 }
 
-func (sender *Sender) Reply(msgs ...interface{}) (int, error) {
+func (sender *Sender) Reply(msgs ...interface{}) ([]string, error) {
 	msg := msgs[0]
 	var edit *core.Edit
 	var replace *core.Replace
@@ -321,11 +330,12 @@ func (sender *Sender) Reply(msgs ...interface{}) (int, error) {
 				}, msg.(string))
 			}
 			if sender.reply == nil {
-				return 0, nil
+				return []string{}, nil
 			}
-			return sender.reply.ID, nil
+			return []string{fmt.Sprint(sender.reply.ID)}, nil
 		}
 		paths := []string{}
+		message = regexp.MustCompile(`file=[^\[\]]*,url`).ReplaceAllString(message, "file")
 		for _, v := range regexp.MustCompile(`\[CQ:image,file=([^\[\]]+)\]`).FindAllStringSubmatch(message, -1) {
 			paths = append(paths, v[1])
 			message = strings.Replace(message, fmt.Sprintf(`[CQ:image,file=%s]`, v[1]), "", -1)
@@ -345,6 +355,12 @@ func (sender *Sender) Reply(msgs ...interface{}) (int, error) {
 						i.Caption = message
 					}
 					is = append(is, i)
+				} else if strings.HasPrefix(path, "http") {
+					i := &tb.Photo{File: tb.FromURL(path)}
+					if index == 0 {
+						i.Caption = message
+					}
+					is = append(is, i)
 				} else {
 					data, err := os.ReadFile("data/images/" + path)
 					if err == nil {
@@ -359,7 +375,7 @@ func (sender *Sender) Reply(msgs ...interface{}) (int, error) {
 					}
 				}
 			}
-			b.SendAlbum(r, is)
+			b.SendAlbum(r, is, options...)
 		} else {
 			rt, err = b.Send(r, message, options...)
 		}
@@ -372,7 +388,7 @@ func (sender *Sender) Reply(msgs ...interface{}) (int, error) {
 		f, err := os.Open(string(msg.(core.ImagePath)))
 		if err != nil {
 			sender.Reply(err)
-			return 0, nil
+			return []string{}, nil
 		} else {
 			rts, err := b.SendAlbum(r, tb.Album{&tb.Photo{File: tb.FromReader(f)}}, options...)
 			if err == nil {
@@ -380,15 +396,36 @@ func (sender *Sender) Reply(msgs ...interface{}) (int, error) {
 			}
 		}
 	case core.ImageUrl:
-		rsp, err := httplib.Get(string(msg.(core.ImageUrl))).Response()
+		// rsp, err := httplib.Get(string(msg.(core.ImageUrl))).Response()
+		// if err != nil {
+		// 	sender.Reply(err)
+		// 	return 0, nil
+		// } else {
+
+		// }
+		rts, err := b.SendAlbum(r, tb.Album{&tb.Photo{File: tb.FromURL(string(msg.(core.ImageUrl)))}}, options...)
+		if err == nil {
+			rt = &rts[0]
+		}
+	case core.VideoUrl:
+		rts, err := b.SendAlbum(r, tb.Album{&tb.Video{File: tb.FromURL(string(msg.(core.VideoUrl)))}}, options...)
+		if err == nil {
+			rt = &rts[0]
+		}
+	case core.ImageData:
+		rts, err := b.SendAlbum(r, tb.Album{&tb.Photo{File: tb.FromReader(bytes.NewReader(msg.(core.ImageData)))}}, options...)
+		if err == nil {
+			rt = &rts[0]
+		}
+	case core.ImageBase64:
+		data, err := base64.StdEncoding.DecodeString(string(msg.(core.ImageBase64)))
 		if err != nil {
 			sender.Reply(err)
-			return 0, nil
-		} else {
-			rts, err := b.SendAlbum(r, tb.Album{&tb.Photo{File: tb.FromReader(rsp.Body)}}, options...)
-			if err == nil {
-				rt = &rts[0]
-			}
+			return []string{}, nil
+		}
+		rts, err := b.SendAlbum(r, tb.Album{&tb.Photo{File: tb.FromReader(bytes.NewReader(data))}}, options...)
+		if err == nil {
+			rt = &rts[0]
 		}
 	}
 	if err != nil {
@@ -410,9 +447,9 @@ func (sender *Sender) Reply(msgs ...interface{}) (int, error) {
 		sender.reply = rt
 	}
 	if sender.reply != nil {
-		return sender.reply.ID, err
+		return []string{fmt.Sprint(sender.reply.ID)}, err
 	}
-	return 0, nil
+	return []string{}, nil
 }
 
 func (sender *Sender) Delete() error {

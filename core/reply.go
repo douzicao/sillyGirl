@@ -13,8 +13,6 @@ import (
 	"github.com/buger/jsonparser"
 )
 
-var reply = NewBucket("reply")
-
 type Reply struct {
 	Rules   []string
 	Type    string //text url
@@ -135,9 +133,9 @@ func InitReplies() {
 					s.Reply(err)
 					return true
 				}
-				if appreciate.Request.Url != recommand {
-					f += "\n" + Tail
-				}
+				// if appreciate.Request.Url != recommand {
+				// 	f += "\n" + Tail
+				// }
 				s.Reply(f)
 			case "template":
 				data := data()
@@ -210,9 +208,9 @@ func InitReplies() {
 					content = strings.Replace(content, v, "", -1)
 				}
 				content = strings.Replace(content, `[d]`, ",", -1)
-				if appreciate.Request.Url != recommand {
-					content += "\n" + Tail
-				}
+				// if appreciate.Request.Url != recommand {
+				// 	content += "\n" + Tail
+				// }
 				s.Reply(content)
 			default:
 				d := data()

@@ -11,7 +11,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/astaxie/beego/logs"
 	"github.com/axgle/mahonia"
 	"github.com/beego/beego/v2/adapter/httplib"
 	"github.com/douzicao/sillyGirl/core"
@@ -23,7 +22,7 @@ var relaier = wx.Get("relaier")
 var mode = "bgm"
 
 func init() {
-	core.Pushs["wx"] = func(i interface{}, s string) {
+	core.Pushs["wx"] = func(i interface{}, s string, _ interface{}, _ string) {
 		if robot_wxid != "" {
 			pmsg := TextMsg{
 				Msg:    s,
@@ -32,7 +31,7 @@ func init() {
 			sendTextMsg(&pmsg)
 		}
 	}
-	core.GroupPushs["wx"] = func(i, j interface{}, s string) {
+	core.GroupPushs["wx"] = func(i, j interface{}, s string, _ string) {
 		to := fmt.Sprint(i) + "@chatroom"
 		pmsg := TextMsg{
 			ToWxid: to,
@@ -40,23 +39,45 @@ func init() {
 		if j != nil && fmt.Sprint(j) != "" {
 			pmsg.MemberWxid = fmt.Sprint(j)
 		}
-		for _, v := range regexp.MustCompile(`\[CQ:image,file=([^\[\]]+)\]`).FindAllStringSubmatch(s, -1) {
+		s = regexp.MustCompile(`file=[^\[\]]*,url`).ReplaceAllString(s, "file")
+		for _, v := range regexp.MustCompile(`\[CQ:image,file=([^\[\]]*)\]`).FindAllStringSubmatch(s, -1) {
 			s = strings.Replace(s, fmt.Sprintf(`[CQ:image,file=%s]`, v[1]), "", -1)
-			data, err := os.ReadFile("data/images/" + v[1])
-			if err == nil {
-				add := regexp.MustCompile("(https.*)").FindString(string(data))
-				if add != "" {
-					pmsg := OtherMsg{
-						ToWxid: to,
-						Msg: Msg{
-							URL:  relay(add),
-							Name: name(add),
-						},
+			if strings.HasPrefix(v[1], "http") {
+				pmsg := OtherMsg{
+					ToWxid: to,
+					Msg: Msg{
+						URL:  relay(v[1]),
+						Name: name(v[1]),
+					},
+				}
+				defer sendOtherMsg(&pmsg)
+			} else if strings.HasPrefix(v[1], "base64") {
+				pmsg := OtherMsg{
+					ToWxid: to,
+					Msg: Msg{
+						URL:  strings.Replace(v[1], `base64://`, "", -1),
+						Name: "base64",
+					},
+				}
+				defer sendOtherMsg(&pmsg)
+			} else if v[1] != "" {
+				data, err := os.ReadFile("data/images/" + v[1])
+				if err == nil {
+					add := regexp.MustCompile("(https.*)").FindString(string(data))
+					if add != "" {
+						pmsg := OtherMsg{
+							ToWxid: to,
+							Msg: Msg{
+								URL:  relay(add),
+								Name: name(add),
+							},
+						}
+						defer sendOtherMsg(&pmsg)
 					}
-					defer sendOtherMsg(&pmsg)
 				}
 			}
 		}
+
 		s = regexp.MustCompile(`\[CQ:([^\[\]]+)\]`).ReplaceAllString(s, "")
 		pmsg.Msg = s
 		sendTextMsg(&pmsg)
@@ -120,6 +141,7 @@ func init() {
 				wm.user_name = ag.Content.FromName
 				if ag.Content.FromGroup != "" {
 					wm.chat_id = core.Int(strings.Replace(ag.Content.FromGroup, "@chatroom", "", -1))
+					wm.chat_name = ag.Content.FromGroupName
 				}
 				if robot_wxid != ag.Content.RobotWxid {
 					robot_wxid = ag.Content.RobotWxid
@@ -129,7 +151,7 @@ func init() {
 					value: wm,
 				}
 			}
-			logs.Info("recv: %s", data)
+			// logs.Info("recv: %s", data)
 			return
 		}
 		jms := JsonMsg{}
@@ -143,9 +165,9 @@ func init() {
 			// if jms.Type != 1 && jms.Type != 3 && jms.Type != 5 {
 			return
 		}
-		if strings.Contains(fmt.Sprint(jms.Msg), `<type>57</type>`) {
-			return
-		}
+		// if strings.Contains(fmt.Sprint(jms.Msg), `<type>57</type>`) {
+		// 	return
+		// }
 		if jms.FinalFromWxid == jms.RobotWxid {
 			return
 		}
@@ -168,12 +190,18 @@ func init() {
 		case float64:
 			wm.content = fmt.Sprintf("%d", int(jms.Msg.(float64)))
 		default:
-			wm.content = fmt.Sprint(jms.Msg)
+			if strings.Contains(fmt.Sprint(jms.Msg), `<type>57</type>`) {
+				matchMsg := regexp.MustCompile(`<title>(.+?)</title>`).FindAllStringSubmatch(fmt.Sprint(jms.Msg), -1)
+				wm.content = matchMsg[0][1]
+			} else {
+				wm.content = fmt.Sprint(jms.Msg)
+			}
 		}
 		wm.user_id = jms.FinalFromWxid
 		wm.user_name = jms.FinalFromName
 		if strings.Contains(jms.FromWxid, "@chatroom") {
 			wm.chat_id = core.Int(strings.Replace(jms.FromWxid, "@chatroom", "", -1))
+			wm.chat_name = jms.FromName
 		}
 		core.Senders <- &Sender{
 			value: wm,
@@ -192,6 +220,9 @@ func init() {
 }
 
 func relay(url string) string {
+	if !strings.Contains(url, "gchat.qpic.cn") {
+		return url
+	}
 	if wx.GetBool("relay_mode", false) == false {
 		return url
 	}
@@ -231,6 +262,9 @@ func (sender *Sender) GetImType() string {
 func (sender *Sender) GetUsername() string {
 	return sender.value.user_name
 }
+func (sender *Sender) GetChatname() string {
+	return sender.value.chat_name
+}
 func (sender *Sender) GetReplySenderUserID() int {
 	if !sender.IsReply() {
 		return 0
@@ -240,7 +274,13 @@ func (sender *Sender) GetReplySenderUserID() int {
 func (sender *Sender) IsAdmin() bool {
 	return strings.Contains(wx.Get("masters"), fmt.Sprint(sender.GetUserID()))
 }
-func (sender *Sender) Reply(msgs ...interface{}) (int, error) {
+func (sender *Sender) Reply(msgs ...interface{}) ([]string, error) {
+	chatId := sender.GetChatID()
+	if chatId != 0 {
+		if onGroups := wx.Get("spy_on"); onGroups != "" && strings.Contains(onGroups, fmt.Sprint(chatId)) {
+			return []string{}, nil
+		}
+	}
 	to := ""
 	if sender.value.chat_id != 0 {
 		to = fmt.Sprintf("%d@chatroom", sender.value.chat_id)
@@ -259,14 +299,44 @@ func (sender *Sender) Reply(msgs ...interface{}) (int, error) {
 		switch item.(type) {
 		case string:
 			pmsg.Msg = item.(string)
-			images := []string{}
-			for _, v := range regexp.MustCompile(`\[CQ:image,file=base64://([^\[\]]+)\]`).FindAllStringSubmatch(pmsg.Msg, -1) {
-				images = append(images, v[1])
-				pmsg.Msg = strings.Replace(pmsg.Msg, fmt.Sprintf(`[CQ:image,file=base64://%s]`, v[1]), "", -1)
+			pmsg.Msg = regexp.MustCompile(`file=[^\[\]]*,url`).ReplaceAllString(pmsg.Msg, "file")
+			for _, v := range regexp.MustCompile(`\[CQ:image,file=([^\[\]]*)\]`).FindAllStringSubmatch(pmsg.Msg, -1) {
+				pmsg.Msg = strings.Replace(pmsg.Msg, fmt.Sprintf(`[CQ:image,file=%s]`, v[1]), "", -1)
+				if strings.HasPrefix(v[1], "http") {
+					pmsg := OtherMsg{
+						ToWxid: to,
+						Msg: Msg{
+							URL:  relay(v[1]),
+							Name: name(v[1]),
+						},
+					}
+					defer sendOtherMsg(&pmsg)
+				} else if strings.HasPrefix(v[1], "base64") {
+					pmsg := OtherMsg{
+						ToWxid: to,
+						Msg: Msg{
+							URL:  strings.Replace(v[1], `base64://`, "", -1),
+							Name: "base64",
+						},
+					}
+					defer sendOtherMsg(&pmsg)
+				} else if v[1] != "" {
+					data, err := os.ReadFile("data/images/" + v[1])
+					if err == nil {
+						add := regexp.MustCompile("(https.*)").FindString(string(data))
+						if add != "" {
+							pmsg := OtherMsg{
+								ToWxid: to,
+								Msg: Msg{
+									URL:  relay(add),
+									Name: name(add),
+								},
+							}
+							defer sendOtherMsg(&pmsg)
+						}
+					}
+				}
 			}
-			// for _, image := range images {
-			// 	wxbase
-			// }
 		case []byte:
 			pmsg.Msg = string(item.([]byte))
 		case core.ImageUrl:
@@ -280,12 +350,44 @@ func (sender *Sender) Reply(msgs ...interface{}) (int, error) {
 				},
 			}
 			sendOtherMsg(&pmsg)
+		case core.VideoUrl:
+			url := string(item.(core.VideoUrl))
+			pmsg := OtherMsg{
+				ToWxid:     to,
+				MemberWxid: at,
+				Event:      "SendVideoMsg",
+				Msg: Msg{
+					URL:  url,
+					Name: name(url),
+				},
+			}
+			sendOtherMsg(&pmsg)
+		case core.ImageData:
+			pmsg := OtherMsg{
+				ToWxid:     to,
+				MemberWxid: at,
+				Msg: Msg{
+					URL:  base64.StdEncoding.EncodeToString(item.(core.ImageData)),
+					Name: "base64",
+				},
+			}
+			sendOtherMsg(&pmsg)
+		case core.ImageBase64:
+			pmsg := OtherMsg{
+				ToWxid:     to,
+				MemberWxid: at,
+				Msg: Msg{
+					URL:  string(item.(core.ImageBase64)),
+					Name: "base64",
+				},
+			}
+			sendOtherMsg(&pmsg)
 		}
 	}
 	if pmsg.Msg != "" {
 		sendTextMsg(&pmsg)
 	}
-	return 0, nil
+	return []string{}, nil
 }
 
 func name(str string) string {
@@ -310,10 +412,10 @@ func (sender *Sender) Copy() core.Sender {
 }
 
 func sendTextMsg(pmsg *TextMsg) {
+	pmsg.Msg = strings.ReplaceAll(pmsg.Msg, "\\r", "\n")
+	pmsg.Msg = regexp.MustCompile("[\n\r]+").ReplaceAllString(pmsg.Msg, "\n")
+	pmsg.Msg = strings.Trim(pmsg.Msg, "\n ")
 	if mode == "vlw" {
-		// if c == nil {
-		// 	return
-		// }
 		type AutoGenerated struct {
 			Token      string `json:"token"`
 			API        string `json:"api"`
@@ -333,12 +435,7 @@ func sendTextMsg(pmsg *TextMsg) {
 		req := httplib.Post(vlw_addr)
 		req.Body(data)
 		req.Response()
-		// go func() {
-		// 	tosend <- data
-		// }()
-		// c.WriteJSON(a)
 	} else {
-		pmsg.Msg = TrimHiddenCharacter(pmsg.Msg)
 		if pmsg.Msg == "" {
 			return
 		}
@@ -387,11 +484,13 @@ func sendOtherMsg(pmsg *OtherMsg) {
 		// 	tosend <- data
 		// }()
 	} else {
-		pmsg.RobotWxid = robot_wxid
-		req := httplib.Post(api_url())
-		req.Header("Content-Type", "application/json")
-		data, _ := json.Marshal(pmsg)
-		req.Body(data)
-		req.Response()
+		if pmsg.Msg.URL != "base64" {
+			pmsg.RobotWxid = robot_wxid
+			req := httplib.Post(api_url())
+			req.Header("Content-Type", "application/json")
+			data, _ := json.Marshal(pmsg)
+			req.Body(data)
+			req.Response()
+		}
 	}
 }

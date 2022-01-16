@@ -9,7 +9,7 @@ import (
 	"github.com/douzicao/sillyGirl/core"
 )
 
-func init() {
+func initTask() {
 	core.AddCommand("ql", []core.Function{
 		{
 			Rules: []string{`\r\a\w ?`},

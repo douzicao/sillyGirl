@@ -5,6 +5,8 @@ import (
 	"os"
 	"regexp"
 	"time"
+
+	"github.com/beego/beego/v2/adapter/httplib"
 )
 
 var Duration time.Duration
@@ -22,7 +24,7 @@ func init() {
 		}
 	}
 	initStore()
-	ReadYaml(ExecPath+"/conf/", &Config, "https://raw.githubusercontent.com/douzicao/sillyGirl/main/conf/demo_config.yaml")
+	ReadYaml(ExecPath+"/conf/", &Config, "https://raw.githubusercontent.com/cdle/sillyGirl/main/conf/demo_config.yaml")
 	InitReplies()
 	initToHandleMessage()
 
@@ -51,4 +53,8 @@ func init() {
 	if sillyGirl.Get("uuid") == "" {
 		sillyGirl.Set("uuid", GetUUID())
 	}
+	httplib.SetDefaultSetting(httplib.BeegoHTTPSettings{
+		ConnectTimeout:   time.Second * 10,
+		ReadWriteTimeout: time.Second * 10,
+	})
 }

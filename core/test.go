@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/beego/beego/v2/adapter/httplib"
@@ -20,7 +21,7 @@ func init() {
 		defer sillyGirl.Set("rebootInfo", "")
 		if v != "" {
 			vv := strings.Split(v, " ")
-			tp, cd, ud := vv[0], Int(vv[1]), Int(vv[2])
+			tp, cd, ud := vv[0], Int(vv[1]), vv[2]
 			if tp == "fake" { //&& sillyGirl.GetBool("update_notify", false) == true {
 				// time.Sleep(time.Second * 10)
 				// NotifyMasters("自动更新完成。")
@@ -30,12 +31,12 @@ func init() {
 			for i := 0; i < 10; i++ {
 				if cd == 0 {
 					if push, ok := Pushs[tp]; ok {
-						push(ud, msg)
+						push(ud, msg, nil, "")
 						break
 					}
 				} else {
 					if push, ok := GroupPushs[tp]; ok {
-						push(cd, ud, msg)
+						push(cd, ud, msg, "")
 						break
 					}
 				}
@@ -63,63 +64,185 @@ func initSys() {
 			},
 		},
 		{
-			Rules: []string{"raw ^升级$"},
-			Cron:  "*/1 * * * *",
+			Rules: []string{"reply ? ?"},
+			Admin: true,
+			Handle: func(s Sender) interface{} {
+				a := s.Get(1)
+				if a == "nil" {
+					a = ""
+				}
+				Bucket(fmt.Sprintf("reply%s%d", s.GetImType(), s.GetChatID())).Set(s.Get(0), a)
+				return "设置成功。"
+			},
+		},
+		{
+			Rules: []string{"replies"},
+			Admin: true,
+			Handle: func(s Sender) interface{} {
+				rt := ""
+				Bucket(fmt.Sprintf("reply%s%d", s.GetImType(), s.GetChatID())).Foreach(func(k, v []byte) error {
+					rt += fmt.Sprintf("%s === %s\n", k, v)
+					return nil
+				})
+				return strings.Trim(rt, "\n")
+			},
+		},
+		{
+			Rules: []string{"raw ^卸载$"},
 			Admin: true,
 			Handle: func(s Sender) interface{} {
 				if runtime.GOOS == "windows" {
 					return "windows系统不支持此命令"
 				}
-				if s.GetImType() == "fake" && !sillyGirl.GetBool("auto_update", true) {
+				s.Reply("您真的要卸载" + name() + "吗？(5秒后默认卸载，Y/n)")
+				switch s.Await(s, func(s Sender) interface{} {
+					return YesNo
+				}, time.Second*5) {
+				case No:
+					return name() + "将继续为您服务！"
+				}
+				s.Reply("是否删除用户数据？(5秒后默认删除，Y/n)")
+				clear := true
+				switch s.Await(s, func(s Sender) interface{} {
+					return YesNo
+				}, time.Second*5) {
+				case No:
+					clear = false
+					return name() + "将继续为您服务！"
+				}
+				s.Reply("进入冷静期，给你5秒时间思考，输入任意字符取消卸载：")
+				if s.Await(s, nil, time.Second*5) != nil {
+					return name() + "将继续为您服务！"
+				}
+				s.Reply("你终究还是下得了狠心，不过那又怎样？")
+				time.Sleep(time.Second * 2)
+				s.Reply("请在5秒内输入“我是🐶”完成卸载：")
+				rt := s.Await(s, nil, time.Second*5)
+				switch rt.(type) {
+				case nil:
+					return "你的打字速度不够快啊，请重新卸载～"
+				case string:
+					if rt.(string) != "我是🐶" {
+						return "输入错误，请重新卸载～"
+					}
+				}
+				if !sillyGirl.GetBool("forbid_uninstall") {
+					if clear {
+						os.RemoveAll("/etc/sillyGirl")
+					}
+					os.RemoveAll(ExecPath)
+					os.RemoveAll("/usr/lib/systemd/system/sillyGirl.service")
+				}
+				s.Reply("卸载完成，下次重启你就再也见不到我了。")
+				time.Sleep(time.Second)
+				s.Reply("是否立即重启？")
+				s.Reply("正在重启...")
+				time.Sleep(time.Second)
+				os.Exit(0)
+				return nil
+			},
+		},
+		{
+			Rules: []string{"raw ^升级$"},
+			// Cron:  "*/1 * * * *",
+			Admin: true,
+			Handle: func(s Sender) interface{} {
+				if runtime.GOOS == "windows" {
+					return "windows系统不支持此命令"
+				}
+
+				if s.GetImType() == "fake" && !sillyGirl.GetBool("auto_update", true) && compiled_at == "" {
 					return nil
 				}
-				if s.GetImType() != "fake" {
-					if compiled_at != "" {
-						// prefix := "https://ghproxy.com/"
-						//
-						// prefix := sillyGirl.Get("download_prefix")
-						for _, prefix := range []string{"https://ghproxy.com/", ""} {
-							data, _ := httplib.Get(prefix + "https://raw.githubusercontent.com/douzicao/binary/master/compile_time.go").String()
-							if str := regexp.MustCompile(`\d+`).FindString(data); str != "" && strings.Contains(data, "package") {
-								if str > compiled_at {
-									s.Reply("正在下载更新...")
-									data, err := httplib.Get(prefix + "https://raw.githubusercontent.com/douzicao/binary/master/sillyGirl_linux_" + runtime.GOARCH + "_" + str).Bytes()
-									if err != nil {
-										// return "下载程序错误：" + err.Error()
-										continue
-									}
-									if len(data) < 2646147 {
-										// return "下载失败。"
-										continue
-									}
-									filename := ExecPath + "/" + pname
-									if err = os.RemoveAll(filename); err != nil {
-										return "删除旧程序错误：" + err.Error()
-									}
-									if err = os.WriteFile(filename, data, 777); err != nil {
-										return "写入程序错误：" + err.Error()
-									}
-									s.Reply("更新完成，重启生效，是否立即重启？(Y/n，3秒后自动确认。)")
-									if s.Await(s, func(s Sender) interface{} {
-										return YesNo
-									}, time.Second*3) == No {
-										return "好的，下次重启生效。。"
-									}
-									go func() {
-										time.Sleep(time.Second)
-										Daemon()
-									}()
-									sillyGirl.Set("rebootInfo", fmt.Sprintf("%v %v %v", s.GetImType(), s.GetChatID(), s.GetUserID()))
-									return "正在重启。"
-								} else {
-									return fmt.Sprintf("当前版本(%s)最新，无需升级。", compiled_at)
+
+				if compiled_at != "" {
+					str := ""
+					for i, prefix := range []string{"https://ghproxy.com/", ""} {
+						if str == "" && s.GetImType() != "fake" {
+							if v, ok := OttoFuncs["version"]; ok {
+								if rt := v(""); rt != "" {
+									str = regexp.MustCompile(`\d{13}`).FindString(rt)
 								}
-							} else {
-								continue
 							}
 						}
-						return "无法升级."
+						if str == "" {
+							data, _ := httplib.Get(prefix + "https://raw.githubusercontent.com/cdle/binary/master/compile_time.go").String()
+							rt := regexp.MustCompile(`\d{13}`).FindString(data)
+							if strings.Contains(data, "package") {
+								str = rt
+							}
+						}
+						if str != "" {
+							if s.GetImType() == "fake" {
+								ver := sillyGirl.Get("compiled_at")
+								if str > ver && ver > compiled_at {
+									return nil
+								}
+								if ver < str && str > compiled_at {
+									sillyGirl.Set("compiled_at", str)
+									NotifyMasters(fmt.Sprintf("检测到更新版本(%s)。", str))
+								}
+								return nil
+							} else {
+								s.Reply(fmt.Sprintf("检测到最新版本(%s)。", str))
+							}
+							if str > compiled_at {
+								if i == 0 {
+									s.Reply("正在从ghproxy.com下载更新...")
+								} else {
+									s.Reply("尝试从github.com下载更新...")
+								}
+								req := httplib.Get(prefix + "https://raw.githubusercontent.com/cdle/binary/master/sillyGirl_linux_" + runtime.GOARCH + "_" + str)
+								if i == 1 && Transport != nil {
+									req.SetTransport(Transport)
+								}
+								req.SetTimeout(time.Minute*5, time.Minute*5)
+								data, err := req.Bytes()
+								if err != nil {
+									// return "下载程序错误：" + err.Error()
+									continue
+								}
+								if len(data) < 2646147 {
+									// return "下载失败。"
+									continue
+								}
+								filename := ExecPath + "/" + pname
+								if err = os.RemoveAll(filename); err != nil {
+									return "删除旧程序错误：" + err.Error()
+								}
+
+								if f, err := os.OpenFile(filename, syscall.O_CREAT, 0777); err != nil {
+									return "创建程序错误：" + err.Error()
+								} else {
+									_, err := f.Write(data)
+									f.Close()
+									if err != nil {
+										des := err.Error()
+										if err = os.WriteFile(filename, data, 777); err != nil {
+											return "写入程序错误：" + des + "\n" + err.Error()
+										}
+									}
+								}
+								s.Reply("更新完成，重启生效，是否立即重启？(Y/n，3秒后自动确认。)")
+								if s.Await(s, func(s Sender) interface{} {
+									return YesNo
+								}, time.Second*3) == No {
+									return "好的，下次重启生效。。"
+								}
+								go func() {
+									time.Sleep(time.Second)
+									Daemon()
+								}()
+								sillyGirl.Set("rebootInfo", fmt.Sprintf("%v %v %v", s.GetImType(), s.GetChatID(), s.GetUserID()))
+								return "正在重启。"
+							} else {
+								return fmt.Sprintf("当前版本(%s)最新，无需升级。", compiled_at)
+							}
+						} else {
+							continue
+						}
 					}
+					return `无法升级，你网不好。建议您手动于linux执行一键升级命令： s=sillyGirl;a=arm64;if [[ $(uname -a | grep "x86_64") != "" ]];then a=amd64;fi ;if [ ! -d $s ];then mkdir $s;fi ;cd $s;wget https://mirror.ghproxy.com/https://github.com/cdle/${s}/releases/download/main/${s}_linux_$a -O $s && chmod 777 $s;pkill -9 $s;$(pwd)/$s`
 				}
 
 				s.Reply("开始检查核心更新...", E)
@@ -183,7 +306,7 @@ func initSys() {
 			Rules: []string{"raw ^编译$"},
 			Admin: true,
 			Handle: func(s Sender) interface{} {
-				if sillyGirl.Get("compiled_at") == "" {
+				if compiled_at != "" {
 					return "编译个🐔8。"
 				}
 				s.Reply("正在编译程序...", E)
@@ -203,6 +326,13 @@ func initSys() {
 				s.Reply("即将重启！", E)
 				Daemon()
 				return nil
+			},
+		},
+		{
+			Rules: []string{"raw ^status$"},
+			Admin: true,
+			Handle: func(s Sender) interface{} {
+				return fmt.Sprintf("总计：%d，已处理：%d，运行中：%d", total, finished, total-finished)
 			},
 		},
 		{
@@ -251,7 +381,7 @@ func initSys() {
 					name = "sillyGirl"
 				}
 				b := Bucket(name)
-				if !IsBucket(b) {
+				if !IsBucket(b) && !strings.HasPrefix(name, "tgc_") {
 					s.Continue()
 					return nil
 				}
@@ -270,7 +400,6 @@ func initSys() {
 			Admin: true,
 			Rules: []string{"get ? ?", "? get ?"},
 			Handle: func(s Sender) interface{} {
-
 				name := s.Get(0)
 				if name == "silly" {
 					name = "sillyGirl"
@@ -298,8 +427,8 @@ func initSys() {
 				}
 				if s.GetChatID() != 0 && name != "reply" {
 					return "请私聊我。"
-				}
-				if name != "otto" && name != "reply" && name != "sillyGirl" && name != "qinglong" && name != "wx" && name != "tg" && name != "qq" {
+				} //fanlivip
+				if name != "fanlivip" && name != "otto" && name != "reply" && name != "wxsv" && name != "sillyGirl" && name != "qinglong" && name != "wx" && name != "wxmp" && name != "tg" && name != "qq" && !strings.HasPrefix(name, "tgc_") {
 					s.Continue()
 					return nil
 				}
@@ -307,10 +436,10 @@ func initSys() {
 					s.Disappear()
 				}
 				b := Bucket(name)
-				if !IsBucket(b) {
-					s.Continue()
-					return nil
-				}
+				// if !IsBucket(b) {
+				// s.Continue()
+				// return nil
+				// }
 				rt := ""
 				b.Foreach(func(k, v []byte) error {
 					rt += fmt.Sprintf("%s === %s\n", k, v)
@@ -323,7 +452,9 @@ func initSys() {
 			Admin: true,
 			Rules: []string{"send ? ? ?"},
 			Handle: func(s Sender) interface{} {
-				Push(s.Get(0), Int(s.Get(1)), s.Get(2))
+				if push, ok := Pushs[s.Get(0)]; ok {
+					push(s.Get(1), s.Get(2), nil, "")
+				}
 				return "发送成功呢"
 			},
 		},
@@ -363,6 +494,9 @@ func initSys() {
 			Rules: []string{"守护傻妞"},
 			Admin: true,
 			Handle: func(s Sender) interface{} {
+				if runtime.GOOS == "windows" {
+					return "windows系统不支持此命令"
+				}
 				service := `
 [Unit]
 Description=silly silly girl bot
@@ -438,6 +572,7 @@ Alias=sillyGirl.service`
 				if !stop {
 					s.Await(s, func(s2 Sender) interface{} {
 						ct := s2.GetContent()
+
 						me := s2.GetUserID() == s.GetUserID()
 						if strings.Contains(ct, "小爱提示") || ct == "q" {
 							s2.SetContent(fmt.Sprintf("小爱%s字开头的成语有哪些？", begin))
@@ -445,7 +580,7 @@ Alias=sillyGirl.service`
 							return Again
 						}
 						if strings.Contains(ct, "认输") {
-							if me || s.IsAdmin() {
+							if me || s2.IsAdmin() {
 								stop = true
 								return nil
 							} else {
@@ -456,6 +591,9 @@ Alias=sillyGirl.service`
 							if me {
 								return GoAgain(fmt.Sprintf("现在是接【%s】开头的成语哦。", begin))
 							} else {
+								if ct == "成语接龙" {
+									return GoAgain(fmt.Sprintf("现在是接【%s】开头的成语哦。", begin))
+								}
 								s2.Continue()
 								return Again
 							}
@@ -520,7 +658,7 @@ Alias=sillyGirl.service`
 			Rules: []string{"^machineId$"},
 			Admin: true,
 			Handle: func(s Sender) interface{} {
-				return OttoFuncs["machineId"]("")
+				return fmt.Sprintf("你的机器码：%s", OttoFuncs["machineId"](""))
 			},
 		},
 		{

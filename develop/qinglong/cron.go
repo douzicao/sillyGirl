@@ -29,7 +29,7 @@ type Cron struct {
 	Pid        interface{} `json:"pid"`
 }
 
-func init() {
+func initCron() {
 	core.AddCommand("ql", []core.Function{
 		// {
 		// 	Rules: []string{`fuck_xxs`},
@@ -197,7 +197,7 @@ func init() {
 				}
 
 				w := func(s string) int {
-					if strings.Contains(s, "douzicao") {
+					if strings.Contains(s, "cdle") {
 						return 20
 					}
 					if strings.Contains(s, "shufflewzc") {
@@ -207,7 +207,7 @@ func init() {
 						return 9
 					}
 					if strings.Contains(s, "Aaron-lv") {
-						return -8
+						return 2
 					}
 					return 0
 				}
@@ -229,7 +229,7 @@ func init() {
 						continue
 					}
 					if strings.Contains(crons[i].Command, "jd_redEnvelope.js") || strings.Contains(strings.ToLower(crons[i].Command), "jd_red.js") || strings.Contains(strings.ToLower(crons[i].Command), "jd_hongbao.js") || strings.Contains(crons[i].Command, "1111") {
-						if !strings.Contains(crons[i].Command, "douzicao") {
+						if !strings.Contains(crons[i].Command, "cdle") {
 							Config.Req(CRONS, PUT, "/disable", []byte(fmt.Sprintf(`["%s"]`, crons[i].ID)))
 						} else {
 							Config.Req(CRONS, PUT, "/enable", []byte(fmt.Sprintf(`["%s"]`, crons[i].ID)))
