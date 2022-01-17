@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/cdle/sillyGirl/core"
+	"github.com/douzicao/sillyGirl/core"
 	"github.com/gin-gonic/gin"
 	server "github.com/rixingyike/wechat"
 )
