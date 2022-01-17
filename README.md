@@ -44,29 +44,13 @@ set qinglong autoCronHideDuplicate true
 
 set qinglong host http://127.0.0.1:5700
 
-##### 设置qq登录账号
+##### 设置主qq账号
 
-set qq uin 10000
-
-##### 设置qq登录密码
-
-set qq password 123456789
-
-##### 设置qq临时消息默认群号
-
-set qq tempMessageGroupCode ?
+set qq default_bot 10000
 
 ##### 指定要监听的qq群
 
 set qq onGroups g1&g2&g3...
-
-##### 设置是否自动同意好友请求
-
-set qq auto_friend false
-
-##### 设置是否对监听自身消息
-
-set qq onself true
 
 ##### 设置qq管理员
 
@@ -75,14 +59,6 @@ set qq masters q1&q2&q3...
 ##### 设置接受通知的qq账号
 
 set qq notifier q1&q2&q3...
-
-##### 设置qq设备信息(自动生成)
-
-set qq device.json ?
-
-##### 设置qq登录令牌(自动生成)
-
-set qq session.token ?
 
 ##### 设置telegram机器人token
 
@@ -120,6 +96,14 @@ set wxmp encoding_aes_key ?
 
 set wxmp masters w1&w2&w3...
 
+##### 设置公众号关注事件回复
+
+set wxmp subscribe_reply 感谢关注！
+
+##### 设置公众号默认回复
+
+set wxmp default_reply 无法回复该消息
+
 ##### 傻妞内置微信插件，依赖于[可爱猫](https://www.keaimao.com/)和[http-sdk](https://www.vwzx.com/keaimao-http-sdk)
 
 ##### 傻妞远程处理接口 /wx/receive
@@ -136,8 +120,16 @@ set wxmp masters w1&w2&w3...
 
 #set wx relaier ?
 
-##### 设置动态网络地址，适用于傻妞家庭宽带而可爱猫在云服务器的情况下
+##### 设置傻妞是否动态网络地址，适用于傻妞家庭宽带而可爱猫在云服务器的情况下
 
-set wx dynamic_ip true
+set wx sillyGirl_dynamic_ip true
 
+##### 设置可爱猫是否动态网络地址，适用于可爱猫家庭宽带而傻妞在云服务器的情况下
 
+#set wx keaimao_dynamic_ip true
+
+##### 设置可爱猫端口
+
+#set wx keaimao_port ?
+
+![Image text](https://raw.githubusercontent.com/cdle/sillyGirl/main/appreciate.jpg)

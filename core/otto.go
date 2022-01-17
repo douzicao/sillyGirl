@@ -21,7 +21,7 @@ type JsReply string
 
 var o = NewBucket("otto")
 
-var OttoFuncs = map[string]func(string) string{
+var OttoFuncs = map[string]interface{}{
 	"machineId": func(_ string) string {
 		id, err := machineid.ProtectedID("sillyGirl")
 		if err != nil {
@@ -47,11 +47,120 @@ var OttoFuncs = map[string]func(string) string{
 	},
 }
 
+type Strings struct {
+}
+
+func (sender *Strings) Contains(s, substr string) bool {
+	return strings.Contains(s, substr)
+}
+
+func (sender *Strings) Replace(s string, old string, new string, n int) string {
+	return strings.Replace(s, old, new, n)
+}
+
+func (sender *Strings) ReplaceAll(s string, old string, new string) string {
+	return strings.ReplaceAll(s, old, new)
+}
+
+type Fmt struct {
+}
+
+func (sender *Fmt) Sprintf(format string, a ...interface{}) string {
+	return fmt.Sprintf(format, a...)
+}
+
+func (sender *Fmt) Printf(format string, a ...interface{}) {
+	fmt.Printf(format, a...)
+}
+
+func (sender *Fmt) Println(a ...interface{}) (int, error) {
+	return fmt.Println(a...)
+}
+
+func (sender *Fmt) Print(a ...interface{}) (int, error) {
+	return fmt.Print(a...)
+}
+
+type JsSender struct {
+	Sender Sender
+	again  string
+}
+
+func (sender *JsSender) Continue() {
+	sender.Sender.Continue()
+}
+
+func (sender *JsSender) GetUserID() string {
+	return sender.Sender.GetUserID()
+}
+
+func (sender *JsSender) SetContent(s string) {
+	sender.Sender.SetContent(s)
+}
+
+func (sender *JsSender) GetContent() string {
+	return sender.Sender.GetContent()
+}
+func (sender *JsSender) GetImType() string {
+	return sender.Sender.GetImType()
+}
+func (sender *JsSender) RecallMessage(p ...interface{}) {
+	sender.Sender.RecallMessage(p...)
+}
+func (sender *JsSender) GetUsername() string {
+	return sender.Sender.GetUsername()
+}
+func (sender *JsSender) GetMessageID() string {
+	return sender.Sender.GetMessageID()
+}
+
+func (sender *JsSender) GetGroupCode() int {
+	return sender.Sender.GetChatID()
+}
+func (sender *JsSender) IsAdmin() bool {
+	return sender.Sender.IsAdmin()
+}
+func (sender *JsSender) Reply(text string) []string {
+	if text == "" {
+		return []string{}
+	}
+	i, _ := sender.Sender.Reply(text)
+	return i
+}
+func (sender *JsSender) Await(timeout int, fg bool, hd func(*JsSender) string) *JsSender {
+	options := []interface{}{}
+	if timeout != 0 {
+		options = append(options, time.Duration(timeout)*time.Millisecond)
+	}
+	if fg {
+		options = append(options, ForGroup)
+	}
+	var newJsSender *JsSender
+	sender.Sender.Await(sender.Sender, func(sender Sender) interface{} {
+		newJsSender = &JsSender{}
+		newJsSender.Sender = sender
+		if hd != nil {
+			var rt = hd(newJsSender)
+			if strings.HasPrefix(rt, "go_again_") {
+				rt = strings.Replace(rt, "go_again_", "", 1)
+				return GoAgain(rt)
+			} else {
+				if rt == "" {
+					return nil
+				}
+				return rt
+			}
+		}
+		return nil
+	}, options...)
+	return newJsSender
+}
+
 func Init123() {
 	files, err := ioutil.ReadDir(ExecPath + "/develop/replies")
 	if err != nil {
 		os.MkdirAll(ExecPath+"/develop/replies", os.ModePerm)
-		// logs.Warn("打开文件夹%s错误，%v", "develop/replies", err)
+
 		return
 	}
 	get := func(key string) string {
@@ -185,12 +294,13 @@ func Init123() {
 				return s.Get(int(i - 1))
 			}
 			vm := goja.New()
-			vm.Set("call", func(key, value string) interface{} {
+			vm.Set("call", func(key string) interface{} {
 				if f, ok := OttoFuncs[key]; ok {
-					return f(value)
+					return f
 				}
 				return nil
 			})
+			vm.Set("require", require)
 			vm.Set("Request", newrequest)
 			vm.Set("request", request)
 			vm.Set("cancall", func(key string) interface{} {
@@ -198,13 +308,20 @@ func Init123() {
 				return ok
 			})
 			vm.Set("Delete", s.Delete)
-			vm.Set("GetChatID", s.GetChatID)
-			vm.Set("ImType", func() string {
-				return s.GetImType()
+			vm.Set("timeFmt", func(str string) string {
+				return time.Now().Format(str)
 			})
+			vm.Set("GetChatID", s.GetChatID)
+			vm.Set("GoAgain", func(s string) string {
+				return "go_again_" + s
+			})
+			vm.Set("GetImType", s.GetImType)
+			vm.Set("ImType", s.GetImType)
 			vm.Set("Continue", s.Continue)
 			vm.Set("GetUsername", s.GetUsername)
 			vm.Set("GetChatname", s.GetChatname)
+			vm.Set("GetMessageID", s.GetMessageID)
+			vm.Set("RecallMessage", s.RecallMessage)
 			vm.Set("Debug", func(str string) {
 				logs.Debug(str)
 			})
@@ -254,15 +371,19 @@ func Init123() {
 			vm.Set("request", request)
 			vm.Set("push", push)
 			vm.Set("sendText", func(text string) []string {
+				if text == "" {
+					return []string{}
+				}
 				i, _ := s.Reply(text)
 				return i
 			})
 			vm.Set("Logger", Logger)
-			vm.Set("console",console)
+			vm.Set("console", console)
 			vm.Set("SillyGirl", SillyGirl)
 			vm.Set("image", func(url string) interface{} {
 				return `[CQ:image,file=` + url + `]`
 			})
+
 			vm.Set("sendImage", func(url string) []string {
 				if url == "" {
 					return nil
@@ -278,6 +399,15 @@ func Init123() {
 				return i
 			})
 
+			vm.Set("Sender", &JsSender{
+				Sender: s,
+			})
+
+			vm.Set("fmt", &Fmt{})
+			vm.Set("strings", &Strings{})
+			vm.Set("nil", nil)
+
+			// vm.Set("fmt", fmt)
 			importedJs := make(map[string]struct{})
 			importedJs[jr[len(basePath):]] = struct{}{}
 			//2个或者2个以上"/"
@@ -324,6 +454,7 @@ func Init123() {
 				if err != nil {
 					return err
 				}
+				var firstErr error = nil
 				for _, v := range files {
 					if v.IsDir() {
 						continue
@@ -331,31 +462,33 @@ func Init123() {
 					if !strings.Contains(v.Name(), ".js") {
 						continue
 					}
-					var firstErr error = nil
 					if err := importJs(dir + "/" + v.Name()); err != nil {
 						if firstErr == nil {
 							firstErr = err
 						}
 					}
-					return firstErr
 				}
-				return nil
+				return firstErr
 			})
-			rt, err := vm.RunString(template)
+			_, err = vm.RunString(template)
 			if err != nil {
+				if strings.Contains(err.Error(), "window") {
+					return nil
+				}
 				return err
 			}
-			result := rt.String()
-			for _, v := range regexp.MustCompile(`\[image:\s*([^\s\[\]]+)\s*]`).FindAllStringSubmatch(result, -1) {
-				s.Reply(ImageUrl(v[1]))
-				result = strings.Replace(result, fmt.Sprintf(`[image:%s]\n`, v[1]), "", -1)
-			}
-			if result == "" || result == "undefined" {
-				return nil
-			}
-			return result
+			return nil
+			// result := rt.String()
+			// for _, v := range regexp.MustCompile(`\[image:\s*([^\s\[\]]+)\s*]`).FindAllStringSubmatch(result, -1) {
+			// 	s.Reply(ImageUrl(v[1]))
+			// 	result = strings.Replace(result, fmt.Sprintf(`[image:%s]\n`, v[1]), "", -1)
+			// }
+			// if result == "" || result == "undefined" {
+			// 	return nil
+			// }
+			// return result
 		}
-		// logs.Warn("回复：%s添加成功", jr)
+
 		AddCommand("", []Function{
 			{
 				Handle:   handler,

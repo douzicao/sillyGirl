@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"regexp"
 	"strings"
 	"time"
 
@@ -20,9 +21,11 @@ import (
 
 var wxmp = core.NewBucket("wxmp")
 var material = core.NewBucket("wxmpMaterial")
+var image2Md = core.NewBucket("image2Md")
+var file_dir = "logs/wxmp/"
 
 func init() {
-	file_dir := "logs/wxmp/"
+
 	os.MkdirAll(file_dir, os.ModePerm)
 	if !wxmp.GetBool("isKe?", false) {
 		core.Server.Any("/wx/", func(c *gin.Context) {
@@ -46,6 +49,7 @@ func init() {
 				sender.Message = msg.Content
 				sender.Wait = make(chan []interface{}, 1)
 				sender.uid = fmt.Sprint(msg.FromUserName)
+				sender.tp = "wxmp"
 				core.Senders <- sender
 				end := <-sender.Wait
 				ss := []string{}
@@ -85,6 +89,7 @@ func init() {
 						if err != nil {
 							return err
 						}
+
 						material.Set(mediaID, filename)
 						return nil
 					}()
@@ -113,6 +118,9 @@ func init() {
 			DateFormat:     "XML",
 		}
 		app := server.New(cfg)
+		core.Pushs["wxmp"] = func(i1 interface{}, s1 string, _ interface{}, _ string) {
+			app.SendText(fmt.Sprint(i1), s1)
+		}
 		core.Server.Any("/wx/", func(c *gin.Context) {
 			ctx := app.VerifyURL(c.Writer, c.Request)
 			if ctx.Msg.Event == "subscribe" {
@@ -120,6 +128,7 @@ func init() {
 				return
 			}
 			sender := &Sender{}
+			sender.tp = "wxmp"
 			sender.Message = ctx.Msg.Content
 			sender.uid = ctx.Msg.FromUserName
 			sender.ctx = ctx
@@ -134,6 +143,8 @@ type Sender struct {
 	Responses []interface{}
 	Wait      chan []interface{}
 	uid       string
+	tp        string
+	admin     bool
 	core.BaseSender
 }
 
@@ -154,7 +165,7 @@ func (sender *Sender) GetChatID() int {
 }
 
 func (sender *Sender) GetImType() string {
-	return "wxmp"
+	return sender.tp
 }
 
 func (sender *Sender) GetMessageID() string {
@@ -182,7 +193,10 @@ func (sender *Sender) GetRawMessage() interface{} {
 }
 
 func (sender *Sender) IsAdmin() bool {
-	return strings.Contains(wxmp.Get("masters"), fmt.Sprint(sender.uid))
+	if sender.admin {
+		return true
+	}
+	return strings.Contains(core.Bucket(sender.tp).Get("masters"), fmt.Sprint(sender.uid))
 }
 
 func (sender *Sender) IsMedia() bool {
@@ -204,10 +218,53 @@ func (sender *Sender) Reply(msgs ...interface{}) ([]string, error) {
 
 			}
 		}
+		{
+			// paths := []string{}
+			rt = regexp.MustCompile(`file=[^\[\]]*,url`).ReplaceAllString(rt, "file")
+			for _, v := range regexp.MustCompile(`\[CQ:image,file=([^\[\]]+)\]`).FindAllStringSubmatch(rt, -1) {
+				// paths = append(paths, v[1])
+				if strings.HasPrefix(v[1], "http") {
+					if mid := image2Md.Get(v[1]); mid != "" {
+						app.SendImage(sender.GetUserID(), mid)
+						continue
+					}
+					filename := file_dir + fmt.Sprint(time.Now().UnixNano()) + ".jpg"
+					err := func() error {
+						f, err := os.Create(filename)
+						if err != nil {
+							return err
+						}
+						rsp, err := httplib.Get(v[1]).Response()
+						_, err = io.Copy(f, rsp.Body)
+						if err != nil {
+							f.Close()
+							return err
+						}
+						f.Close()
+						// m := officialAccount.GetMaterial()
+						// mediaID, _, err = m.AddMaterial(message.MsgTypeImage, filename)
+						md, err := app.MediaUpload("image", filename)
+						if err != nil {
+							return err
+						}
+						app.SendImage(sender.GetUserID(), md.MediaID)
+						image2Md.Set(v[1], md.MediaID)
+						return nil
+					}()
+					if err == nil {
+
+					}
+				}
+				//
+			}
+		}
+		rt = regexp.MustCompile(`\[CQ:([^\[\]]+)\]`).ReplaceAllString(rt, "")
+		rt = regexp.MustCompile(`^\s`).ReplaceAllString(rt, "")
 		sender.ctx.NewText(rt).Send()
 		return []string{}, nil
+	} else {
+		sender.Responses = append(sender.Responses, msgs...)
 	}
-	sender.Responses = append(sender.Responses, msgs...)
 	return []string{}, nil
 }
 
