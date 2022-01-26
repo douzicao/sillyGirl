@@ -129,6 +129,9 @@ func init() {
 		}
 		logs.Info("QQ机器人(%s)已连接。", botID)
 		core.Pushs["qq"] = func(i interface{}, s string, _ interface{}, botID string) {
+			if qq.GetBool("ban_one2one") {
+				return
+			}
 			if botID == "" {
 				botID = defaultBot
 			}
@@ -302,10 +305,6 @@ func (sender *Sender) IsReply() bool {
 	return false
 }
 
-func (sender *Sender) GetReplySenderUserID() int {
-	return 0
-}
-
 func (sender *Sender) GetRawMessage() interface{} {
 	return sender.Message
 }
@@ -382,6 +381,12 @@ func (sender *Sender) Reply(msgs ...interface{}) ([]string, error) {
 		return []string{}, nil
 	}
 	rt = strings.Trim(rt, "\n")
+
+	if sender.Atlast && !sender.IsFinished {
+		sender.ToSendMessages = append(sender.ToSendMessages, rt)
+		return []string{}, nil
+	}
+
 	ids := []string{}
 	if sender.Message.MessageType == "private" {
 		id, err := sender.Conn.WriteJSON(CallApi{
@@ -422,10 +427,6 @@ func (sender *Sender) Disappear(lifetime ...time.Duration) {
 
 }
 
-func (sender *Sender) Finish() {
-
-}
-
 func (sender *Sender) Copy() core.Sender {
 	new := reflect.Indirect(reflect.ValueOf(interface{}(sender))).Interface().(Sender)
 	return &new
@@ -433,10 +434,6 @@ func (sender *Sender) Copy() core.Sender {
 
 func (sender *Sender) GetUsername() string {
 	return sender.Message.Sender.Nickname
-}
-
-func (sender *Sender) GetChatname() string {
-	return ""
 }
 
 func (sender *Sender) RecallMessage(ps ...interface{}) error {
