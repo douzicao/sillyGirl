@@ -8,7 +8,6 @@ import (
 	"runtime"
 	"strings"
 	"sync/atomic"
-	"time"
 
 	cron "github.com/robfig/cron/v3"
 )
@@ -54,7 +53,7 @@ func initToHandleMessage() {
 	Senders = make(chan Sender)
 	go func() {
 		for {
-			go handleMessage(<-Senders)
+			go HandleMessage(<-Senders)
 		}
 	}()
 }
@@ -120,11 +119,19 @@ func AddCommand(prefix string, cmds []Function) {
 	}
 }
 
-func handleMessage(sender Sender) {
+func HandleMessage(sender Sender) {
 	atomic.AddUint64(&total, 1)
 	defer atomic.AddUint64(&finished, 1)
 	content := TrimHiddenCharacter(sender.GetContent())
-	defer sender.Finish()
+	defer func() {
+		sender.Finish()
+		if sender.IsAtLast() {
+			s := sender.MessagesToSend()
+			if s != "" {
+				sender.Reply(s)
+			}
+		}
+	}()
 
 	// defer func() {
 	// logs.Info("%v ==> %v", sender.GetContent())
@@ -223,7 +230,7 @@ func handleMessage(sender Sender) {
 					sender.Delete()
 					sender.Disappear()
 					// if sender.GetImType() != "wx" && sender.GetImType() != "qq" {
-					sender.Reply("再捣乱我就报警啦～")
+					// sender.Reply("再捣乱我就报警啦～")
 					// }
 					return
 				}
@@ -251,7 +258,7 @@ func handleMessage(sender Sender) {
 				if reg.FindString(content) != "" {
 					if !sender.IsAdmin() && sender.GetImType() != "wx" {
 						sender.Delete()
-						sender.Reply("本妞清除了不好的消息～", time.Duration(time.Second))
+						// sender.Reply("本妞清除了不好的消息～", time.Duration(time.Second))
 						recalled = true
 						break
 					}

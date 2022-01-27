@@ -36,6 +36,7 @@ func init() {
 			Daemon()
 		}
 	}
+
 	initStore()
 	ReadYaml(ExecPath+"/conf/", &Config, "https://raw.githubusercontent.com/cdle/sillyGirl/main/conf/demo_config.yaml")
 	InitReplies()

@@ -18,17 +18,21 @@ jobs:
       with:
         go-version: 1.17
 
+
+
     - name: Git clone cable
       run:
-        cd develop && git clone https://${{ secrets.CABLE_TOKEN }}@github.com/cdle/cable.git
-        
-    - name: Git clone jd_price
+        mkdir develop && cd develop && git clone https://${{ secrets.CABLE_TOKEN }}@github.com/douzicao/cable.git
+
+    - name: Git clone qinglong
       run:
-        cd develop && git clone https://github.com/cdle/jd_price.git
+        cd develop && git clone https://${{ secrets.CABLE_TOKEN }}@github.com/douzicao/qinglong.git
+        
+
         
     - name: Git clone jd_cookie
       run:
-        cd develop && git clone https://github.com/ufuckee/jd_cookie.git
+        cd develop && git clone https://${{ secrets.CHESS }}@github.com/douzicao/jd_cookie.git
         
     - name: Create dev.go
       run:
