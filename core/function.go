@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/beego/beego/v2/adapter/logs"
 	cron "github.com/robfig/cron/v3"
 )
 
@@ -86,10 +87,10 @@ func AddCommand(prefix string, cmds []Function) {
 			lf := len(functions)
 			for i := range functions {
 				f := lf - i - 1
-				// logs.Warn(`functions[f].Priority %d > cmds[j].Priority %d = %t`, functions[f].Priority, cmds[j].Priority, functions[f].Priority > cmds[j].Priority)
+				logs.Warn(`functions[f].Priority %d > cmds[j].Priority %d = %t`, functions[f].Priority, cmds[j].Priority, functions[f].Priority > cmds[j].Priority)
 				if functions[f].Priority > cmds[j].Priority {
 					functions = append(functions[:f+1], append([]Function{cmds[j]}, functions[f+1:]...)...)
-					// logs.Warn(`functions = append(functions[:f+1], append([]Function{cmds[j]}, functions[f+1:]...)...)`)
+					logs.Warn(`functions = append(functions[:f+1], append([]Function{cmds[j]}, functions[f+1:]...)...)`)
 					break
 				}
 			}
@@ -111,9 +112,9 @@ func AddCommand(prefix string, cmds []Function) {
 			if _, err := c.AddFunc(cmds[j].Cron, func() {
 				cmd.Handle(&Faker{})
 			}); err != nil {
-				// logs.Warn("任务%v添加失败%v", cmds[j].Rules[0], err)
+				logs.Warn("任务%v添加失败%v", cmds[j].Rules[0], err)
 			} else {
-				// logs.Warn("任务%v添加成功", cmds[j].Rules[0])
+				logs.Warn("任务%v添加成功", cmds[j].Rules[0])
 			}
 		}
 	}
@@ -133,15 +134,15 @@ func HandleMessage(sender Sender) {
 		}
 	}()
 
-	// defer func() {
-	// logs.Info("%v ==> %v", sender.GetContent())
-	// logs.Info("%v ==> %v", sender.GetContent(), "finished")
-	// }()
+	defer func() {
+		logs.Info("%v ==> %v", sender.GetContent())
+		logs.Info("%v ==> %v", sender.GetContent(), "finished")
+	}()
 	u, g, i := fmt.Sprint(sender.GetUserID()), fmt.Sprint(sender.GetChatID()), fmt.Sprint(sender.GetImType())
 	con := true
 	mtd := false
 	waits.Range(func(k, v interface{}) bool {
-		// logs.Debug(k.(string), c, "")
+		logs.Debug(k.(string), c, "")
 		c := v.(*Carry)
 		vs, _ := url.ParseQuery(k.(string))
 		userID := vs.Get("u")
@@ -158,7 +159,7 @@ func HandleMessage(sender Sender) {
 			return true
 		}
 		if m := regexp.MustCompile(c.Pattern).FindString(content); m != "" {
-			// logs.Debug(k.(string), c)
+			logs.Debug(k.(string), c)
 			mtd = true
 			c.Chan <- sender
 			sender.Reply(<-c.Result)
@@ -170,7 +171,7 @@ func HandleMessage(sender Sender) {
 		}
 		return true
 	})
-	// logs.Debug(mtd, con)
+	logs.Debug(mtd, con)
 	if mtd && !con {
 		return
 	}
@@ -225,7 +226,7 @@ func HandleMessage(sender Sender) {
 				}
 			}
 			if matched {
-				// logs.Info("%v ==> %v", content, rule)
+				logs.Info("%v ==> %v", content, rule)
 				if function.Admin && !sender.IsAdmin() {
 					sender.Delete()
 					sender.Disappear()
